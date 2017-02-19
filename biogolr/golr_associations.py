@@ -40,6 +40,8 @@ import json
 
 import math ### TODO - move?
 
+MAX_ROWS=100000
+
 class GolrFields:
     """
     Enumeration of fields in Golr.
@@ -155,18 +157,21 @@ def translate_obj(d,fname):
     
     return obj
 
+def map_doc(d, field_mapping):
+    for (k,v) in field_mapping.items():
+        if v is not None and k is not None:
+            print("TESTING FOR:"+v+" IN "+str(d))
+            if v in d:
+                print("Setting field {} to {} // was in {}".format(k,d[v],v))
+                d[k] = d[v]
+    return d
 
 def translate_doc(d, field_mapping=None, **kwargs):
     """
     Translate a solr document (i.e. a single result row)
     """
     if field_mapping is not None:
-        for (k,v) in field_mapping.items():
-            if v is not None and k is not None:
-                print("TESTING FOR:"+v+" IN "+str(d))
-                if v in d:
-                    print("Setting field {} to {} // was in {}".format(k,d[v],v))
-                    d[k] = d[v]
+        map_doc(d, field_mapping)
     subject = translate_obj(d,M.SUBJECT)
     map_identifiers_to = kwargs.get('map_identifiers')
     if map_identifiers_to:
@@ -204,12 +209,14 @@ def translate_docs(ds, **kwargs):
     return [translate_doc(d, **kwargs) for d in ds]
 
 
-def translate_docs_compact(ds, **kwargs):
+def translate_docs_compact(ds, field_mapping=None, **kwargs):
     """
     Translate golr association documents to a compact representation
     """
     amap = {}
     for d in ds:
+        if field_mapping is not None:
+            map_doc(d, field_mapping)
         rel = d.get(M.RELATION)
         k = (d[M.SUBJECT],rel)
         if k not in amap:
@@ -255,6 +262,7 @@ def search_associations(subject_category=None,
                         solr=monarch_solr,
                         select_fields=None,
                         fetch_objects=False,
+                        fetch_subjects=False,
                         slim=[],
                         json_facet=None,
                         facet_fields = [
@@ -284,6 +292,16 @@ def search_associations(subject_category=None,
 
         Results are in the 'objects' field
 
+    fetch_subjects : bool
+
+        This is the analog of the fetch_objects field. Note that due
+        to an inherent asymmetry by which the list of subjects can be
+        very large (e.g. all genes in all species for "metabolic
+        process" or "metabolic phenotype") it's necessary to combine
+        this with subject_category and subject_taxon filters
+
+        Results are in the 'subjects' field
+
     slim : List
 
         a list of either class ids (or in future subset ids), used to
@@ -301,14 +319,19 @@ def search_associations(subject_category=None,
     """
     fq = {}
 
+    # canonical form for MGI is a CURIE MGI:nnnn
+    if subject is not None and subject.startswith('MGI:MGI:'):
+        print('Unhacking MGI ID presumably from GO:'+str(subject))
+        subject = subject.replace("MGI:MGI:","MGI")
+    
     # temporary: for querying go solr, map fields
     if object_category is not None and object_category == 'function':
-        go_golr_url = "http://golr.geneontology.org/solr/"
+        go_golr_url = "http://golr.berkeleybop.org/solr/"
         solr = pysolr.Solr(go_golr_url, timeout=5)
         field_mapping=goassoc_fieldmap()
         fq['document_category'] = 'annotation'
-        print('MGI hack: '+str(subject))
         if subject is not None and subject.startswith('MGI:'):
+            print('MGI hack for GO: '+str(subject))
             subject = 'MGI:' + subject
     
     # typically information is stored one-way, e.g. model-disease;
@@ -406,7 +429,7 @@ def search_associations(subject_category=None,
     is_unlimited = False
     if rows < 0:
         is_unlimited = True
-        rows = 100000
+        rows = MAX_ROWS
     params = {
         'q': qstr,
         'fq': filter_queries,
@@ -476,6 +499,27 @@ def search_associations(subject_category=None,
         ofl = ff.get(object_field)
         # solr returns facets counts as list, every 2nd element is number, we don't need the numbers here
         payload['objects'] = ofl[0::2]
+
+    if fetch_subjects:
+        core_subject_field = M.SUBJECT
+        if slim is not None and len(slim)>0:
+            core_subject_field = M.SUBJECT_CLOSURE
+        subject_field = map_field(core_subject_field, field_mapping)
+        if invert_subject_object:
+            subject_field = map_field(M.SUBJECT, field_mapping)
+        oq_params = params.copy()
+        oq_params['fl'] = []
+        oq_params['facet.field'] = [subject_field]
+        oq_params['facet.limit'] = MAX_ROWS
+        oq_params['rows'] = 0
+        oq_params['facet.mincount'] = 1
+        oq_results = solr.search(**oq_params)
+        ff = oq_results.facets['facet_fields']
+        ofl = ff.get(subject_field)
+        # solr returns facets counts as list, every 2nd element is number, we don't need the numbers here
+        payload['subjects'] = ofl[0::2]
+        if len(payload['subjects']) == MAX_ROWS:
+            payload['is_truncated'] = True
         
     if slim is not None and len(slim)>0:
         if 'objects' in payload:
@@ -486,6 +530,51 @@ def search_associations(subject_category=None,
         
     
     return payload
+
+def get_objects_for_subject(subject=None,
+                            object_category=None,
+                            relation=None,
+                            **kwargs):
+    """
+    Convenience method: Given a subject (e.g. gene, disease, variant), return all associated objects (phenotypes, functions, interacting genes, etc)
+    """
+    searchresult = search_associations(subject=subject,
+                                       fetch_objects=True,
+                                       rows=0,
+                                       object_category=object_category,
+                                       relation=relation,
+                                       **kwargs
+    )
+    objs = searchresult['objects']
+    return objs
+
+def get_subjects_for_object(object=None,
+                            subject_category=None,
+                            subject_taxon=None,
+                            relation=None,
+                            **kwargs):
+    """
+    Convenience method: Given a object (e.g. ontology term like phenotype or GO; interacting gene; disease; pathway etc), return all associated subjects (genes, variants, pubs, etc)
+    """
+    searchresult = search_associations(object=object,
+                                       fetch_subjects=True,
+                                       rows=0,
+                                       subject_category=subject_category,
+                                       subject_taxon=subject_taxon,
+                                       relation=relation,
+                                       **kwargs
+    )
+    subjs = searchresult['subjects']
+    return subjs
+
+def search_associations_compact(**kwargs):
+    """
+    Convenience method: as for search associations, use compact
+    """
+    searchresult = search_associations(use_compact_associations=True,
+                                       **kwargs
+    )
+    return searchresult['compact_associations']
 
 def solr_quotify(v):
     if isinstance(v, list):

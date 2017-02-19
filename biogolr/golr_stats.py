@@ -16,9 +16,12 @@ M=GolrFields()
 
 def get_counts(entities=[],
                object_category=None,
+               min_count=1,
                **kwargs):
     """
-    given a set of entities (genes, diseases, etc) returns the number of entities associated with each descriptor in a given category
+    given a set of entities (genes, diseases, etc), finds the number of entities associated with each descriptor in a given category.
+
+    The result is a tuple (cmap, results), where cmap is a dict of TERM:COUNT
 
     """
     results = search_associations(subjects=entities,
@@ -42,7 +45,8 @@ def get_counts(entities=[],
     buckets = results['facets']['categories']['buckets']
     cmap = {}
     for bucket in buckets:
-        cmap[bucket['val']] = bucket['uniq_subject']
+        if bucket['uniq_subject'] >= min_count:
+            cmap[bucket['val']] = bucket['uniq_subject']
     return (cmap, results)
 
 def get_background(objects, taxon, object_category, **kwargs):
@@ -56,20 +60,20 @@ def get_background(objects, taxon, object_category, **kwargs):
                                   **kwargs)
     return results['facet_counts'][M.SUBJECT].keys()
 
-
+# TODO: refactor this - fetch compact associations
 def find_enriched(sample_entities=[],
                   background_entities=None,
                   object_category=None,
                   **kwargs):
 
     """
-    Given a sample set of entities (e.g. overexpressed genes) and a background set (e.g. all genes assayed), and a category of descriptor,
-    return enriched descriptors
-
+    Given a sample set of sample_entities (e.g. overexpressed genes) and a background set (e.g. all genes assayed), and a category of descriptor (e.g. phenotype, function),
+    return enriched descriptors/classes
     """
 
     (sample_counts, sample_results) = get_counts(entities=sample_entities,
                                                  object_category=object_category,
+                                                 min_count=2,
                                                  **kwargs)
     print(str(sample_counts))
 
@@ -88,8 +92,8 @@ def find_enriched(sample_entities=[],
 
     # TODO: consider caching
     (bg_counts,_) = get_counts(entities=background_entities,
-                            object_category=object_category,
-                            **kwargs)
+                               object_category=object_category,
+                               **kwargs)
 
     sample_n = len(sample_entities) # TODO - annotated only?
     pop_n = len(background_entities)
