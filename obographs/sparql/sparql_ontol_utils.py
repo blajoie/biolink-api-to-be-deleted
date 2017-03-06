@@ -1,5 +1,11 @@
 """
 Reconsitutes an ontology from SPARQL queries over a remote SPARQL server
+
+ * the first time an ontology is referenced, basic axioms will be fetched via SPARQL
+ * these will be cached in `/tmp/.cache/`
+ * the second time the same ontology is referenced, the disk cache will be used
+ * if an ontology is referenced a second time in the same in-memory session, the disk cache is bypassed and in-memory (lru) cache is used
+
 """
 
 from SPARQLWrapper import SPARQLWrapper, JSON
@@ -7,7 +13,6 @@ from prefixcommons.curie_util import contract_uri
 from functools import lru_cache
 import percache
 import networkx
-from obographs.tuple_cache import store_object, fetch_object
 from cachier import cachier
 import datetime
 import logging
@@ -34,13 +39,13 @@ ontol_sources = {
 
     
 
-def get_digraph(ont, relations=[], writecache=False):
+def get_digraph(ont, relations=None, writecache=False):
     """
     Creates a basic graph object corresponding to a remote ontology
     """
     digraph = networkx.MultiDiGraph()
     for (s,p,o) in get_edges(ont):
-        if relations==[] or p in relations:
+        if relations is None or p in relations:
             digraph.add_edge(o,s,pred=p)
     for (n,label) in fetchall_labels(ont):
         digraph.add_node(n, attr_dict={'label':label})
@@ -97,17 +102,19 @@ def get_terms_in_subset(ont, subset):
 
 
 def run_sparql(q):
-    # TODO: select based on ontology
+    # TODO: select endpoint based on ontology
     #sparql = SPARQLWrapper("http://rdf.geneontology.org/sparql")
     logging.info("Connecting to sparql endpoint...")
     sparql = SPARQLWrapper("http://sparql.hegroup.org/sparql")
-
+    logging.info("Made wrapper: {}".format(sparql))
     # TODO: iterate over large sets?
     full_q = q + ' LIMIT 250000'
     sparql.setQuery(q)
     sparql.setReturnFormat(JSON)
+    logging.info("Query: {}".format(q))
     results = sparql.query().convert()
     bindings = results['results']['bindings']
+    logging.info("Rows: {}".format(len(bindings)))
     for r in bindings:
         curiefy(r)
     return bindings
@@ -149,28 +156,6 @@ def fetchall_svf(ont):
     """.format(q=queryBody, g=namedGraph)
     bindings = run_sparql(query)
     return [(r['c']['value'], r['p']['value'], r['d']['value']) for r in bindings]
-
-#@cache
-def old_fetchall_labels(ont,writecache=False):
-    """
-    fetch all rdfs:label assertions for an ontology
-    """
-    k=('fetchall_labels',ont)
-    rows = fetch_object(k)
-    if rows is not None:
-        return rows
-    namedGraph = get_named_graph(ont)
-    queryBody = querybody_label()
-    query = """
-    SELECT * WHERE {{
-    GRAPH <{g}>  {q}
-    }}
-    """.format(q=queryBody, g=namedGraph)
-    bindings = run_sparql(query)
-    rows = [(r['c']['value'], r['l']['value']) for r in bindings]
-    if writecache:
-        store_object(k,rows)
-    return rows
 
 @cachier(stale_after=SHELF_LIFE)
 def fetchall_labels(ont):

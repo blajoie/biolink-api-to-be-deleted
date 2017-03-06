@@ -12,20 +12,17 @@ For instructions
 """
 
 import argparse
-from obographs.sparql2ontology import *
-from obographs.graph_io import *
 import networkx as nx
 from networkx.algorithms.dag import ancestors, descendants
-from networkx.drawing.nx_pydot import write_dot
-from prefixcommons.curie_util import expand_uri
+from obographs.ontol_factory import OntologyFactory
+from obographs.graph_io import GraphRenderer
+from obographs.slimmer import get_minimal_subgraph
 import logging
 
 def main():
     """
     Wrapper for OGR
     """
-    logging.basicConfig(level=logging.INFO)
-    logging.info("Welcome!")
     parser = argparse.ArgumentParser(description='Wrapper for obographs library'
                                                  """
                                                  By default, ontologies are cached locally and synced from a remote sparql endpoint
@@ -38,97 +35,81 @@ def main():
                         help='Path to output file')
     parser.add_argument('-t', '--to', type=str, required=False,
                         help='Output to (tree, dot, ...)')
+    parser.add_argument('-d', '--direction', type=str, default='u', required=False,
+                        help='u = up, d = down, ud = up and down')
     parser.add_argument('-p', '--properties', nargs='*', type=str, required=False,
                         help='Properties')
-    parser.add_argument('-n', '--no-cache', type=bool, required=False,
-                        help='Do not cache')
+    parser.add_argument('-s', '--search', type=str, default='', required=False,
+                        help='Search type. p=partial, r=regex')
+    parser.add_argument('-S', '--slim', type=str, default='', required=False,
+                        help='Slim type. m=minimal')
+    parser.add_argument('-c', '--container_properties', nargs='*', type=str, required=False,
+                        help='Properties to nest in graph')
+    parser.add_argument('-v', '--verbosity', default=0, action='count',
+                        help='Increase output verbosity')
 
-    subparsers = parser.add_subparsers(dest='subcommand', help='sub-command help')
-    
-    # SUBCOMMAND
-    parser_n = subparsers.add_parser('search', aliases='s', help='search by label')
-    parser_n.set_defaults(function=cmd_search)
-    parser_n.add_argument('terms',nargs='*')
-    
-    parser_n = subparsers.add_parser('ancestors', aliases='a', help='Checks URLs')
-    parser_n.set_defaults(function=cmd_ancestors)
-    parser_n.add_argument('ids',nargs='*')
+    parser.add_argument('ids',nargs='*')
 
-    parser_n = subparsers.add_parser('descendants', aliases='d', help='Checks URLs')
-    parser_n.set_defaults(function=cmd_descendants)
-    parser_n.add_argument('ids',nargs='*')
-
-    parser_n = subparsers.add_parser('graph', aliases='g', help='Checks URLs')
-    parser_n.set_defaults(function=cmd_graph)
-    parser_n.add_argument('ids',nargs='*')
-
-    parser_n = subparsers.add_parser('cycles', help='Checks URLs')
-    parser_n.set_defaults(function=cmd_cycles)
-    
     args = parser.parse_args()
-    ont = args.resource
+
+    if args.verbosity >= 2:
+        logging.basicConfig(level=logging.DEBUG)
+    if args.verbosity == 1:
+        logging.basicConfig(level=logging.INFO)
+    logging.info("Welcome!")
     
-    func = args.function
-    func(ont, args)
-
-def get_digraph_wrap(ont, args):
-    props = []
-    if args.properties is not None:
-        for p in args.properties:
-            props.append(p)
-    g = get_digraph(ont, props, True)
-    return g
+    handle = args.resource
     
-def cmd_ancestors(ont, args):
-    g = get_digraph_wrap(ont, args)
+    factory = OntologyFactory()
+    logging.info("Creating ont object from: {} {}".format(handle, factory))
+    ont = factory.create(handle)
+    logging.info("ont: {}".format(ont))
+    g = ont.get_filtered_graph(relations=args.properties)
 
+    qids = []
     nodes = set()
-    for id in resolve_ids(g, args.ids, args):
-        nodes.update(ancestors(g,id))
+    dirn = args.direction
+    searchp = args.search
+    for id in ont.resolve_names(args.ids,
+                                is_remote = searchp.find('x') > -1,
+                                is_partial_match = searchp.find('p') > -1,
+                                is_regex = searchp.find('r') > -1):
+        qids.append(id)
         nodes.add(id)
-    show_subgraph(g, nodes, args)
+        # NOTE: we use direct networkx methods as we have already extracted
+        # the subgraph we want
+        if dirn.find("u") > -1:
+            nodes.update(ont.ancestors(id))
+        if dirn.find("d") > -1:
+            nodes.update(ont.descendants(id))
+    show_subgraph(g, nodes, qids, args)
 
-def cmd_descendants(ont, args):
-    g = get_digraph_wrap(ont, args)
 
-    nodes = set()
-    for id in resolve_ids(g, args.ids, args):
-        nodes.update(descendants(g,id))
-        nodes.add(id)
-    show_subgraph(g, nodes, args)
-
-def cmd_graph(ont, args):
-    g = get_digraph_wrap(ont, args)
-
-    nodes = set()
-    for id in resolve_ids(g, args.ids, args):
-        nodes.update(ancestors(g,id))
-        nodes.update(descendants(g,id))
-        nodes.add(id)
-    show_subgraph(g, nodes, args)
-
-def cmd_cycles(ont, args):
-    g = get_digraph_wrap(ont, args)
+def cmd_cycles(handle, args):
+    g = retrieve_filtered_graph(handle, args)
 
     cycles = nx.simple_cycles(g)
     print(list(cycles))
     
-def cmd_search(ont, args):
+def cmd_search(handle, args):
     for t in args.terms:
-        results = search(ont, t)
+        results = search(handle, t)
         for r in results:
             print(r)
 
-def show_subgraph(g, nodes, args):
+def show_subgraph(g, nodes, query_ids, args):
     """
     Writes graph
     """
+    if args.slim.find('m') > -1:
+        logging.info("SLIMMING")
+        g = get_minimal_subgraph(g, query_ids)
     w = GraphRenderer.create(args.to)
     if args.outfile is not None:
         w.outfile = args.outfile
-    w.write_subgraph(g, nodes)
+    w.write_subgraph(g, nodes, query_ids=query_ids, container_predicates=args.container_properties)
             
-def resolve_ids(g, ids, args):
+def resolve_ids(ont, ids, args):
     r_ids = []
     for id in ids:
         if len(id.split(":")) ==2:

@@ -4,28 +4,31 @@ NOTE: This is a standalone module currently in the biolink-api
 repo. It does not depend on any other module in this repo (other than
 prefixcommons), and will be moved to its own repo.
 
-This module maps ontologies to networkx MultiDiGraphs, and provides useful
-convenience methods over these.
+Thhis module provides a general purpose Ontology object that is bound
+to either remote services, PURLs or a local file, and provides various
+operations on these objects, including extraction to trees and
+subgraphs. See the command line examples below for a general picture.
 
-There are two ways of initiating a networkx graph:
+There are two ways of initiating an ontology object:
 
- * via an obo-json file
- * via remote query to a SPARQL service (currently  ontobee)
+ * via a local obo-json file
+ * via remote connections to OBO PURLs
+ * via remote query to a SPARQL service (currently  ontobee, but soon others)
 
-## Working with JSON files
+Persistent caching is used (currently cachier) to avoid repeated expensive I/O connections
 
-See https://github.com/geneontology/obographs
+This is handled via the [ontol_manager.py](ontol_manager.py)
+module. This creates an ontology object (see [ontol.py](ontol.py) ).
 
-## Working with a remote SPARQL service
-
- * the first time an ontology is referenced, basic axioms will be fetched via SPARQL
- * these will be cached in `/tmp/.cache/`
- * the second time the same ontology is referenced, the disk cache will be used
- * if an ontology is referenced a second time in the same in-memory session, the disk cache is bypassed and in-memory (lru) cache is used
-
+Note that object modeling is lightweight - we use the python networkx
+package for representing the basic graph portion of an ontology. See
+also the [obographs](https://github.com/geneontology/obographs) spec.
 
 
-## Command Line Usage
+
+# Command Line Usage
+
+## Initial Setup
 
 ```
 export PATH $HOME/repos/bioink-api/obographs/bin
@@ -34,23 +37,120 @@ ogr -h
 
 Note you need to be connected to a network
 
-### Ancestors queries
+Note: command line interface may change
 
+## Connecting to ontologies
+
+Specify an ontology with the `-r` option. this will always be the OBO name, for example `go`, `cl`, `mp`, etc
+
+ * `-r go` connect to GO via default method (currently SPARQL)
+ * `-r obo:go` connect to GO via download and cache of ontology from PURL
+ * `-r /users/my/my-ontologies/go.json` use local download of ontology
+
+In the following we assume default method, but can be substituted.
+
+## Ancestors queries
 
 List all ancestors:
 
 ```
-./obographs/bin/ogr.py -r cl a neuron
+ogr -r cl neuron
 ```
 
-Shows ancestors as tree, following only subclass
+Show ancestors as tree, following only subclass:
 
 ```
-./obographs/bin/ogr.py -r cl -p subClassOf -t tree a neuron
+ogr -r cl -p subClassOf -t tree neuron
+```
+
+generates:
+
+```
+     % GO:0005623 ! cell
+      % CL:0000003 ! native cell
+       % CL:0000255 ! eukaryotic cell
+        % CL:0000548 ! animal cell
+         % CL:0002319 ! neural cell
+          % CL:0000540 ! neuron * 
+       % CL:0002371 ! somatic cell
+        % CL:0002319 ! neural cell
+         % CL:0000540 ! neuron * 
 ```
 
 Descendants of neuron, parts and subtypes
 
 ```
-./obographs/bin/ogr.py -r cl -p subClassOf -p BFO:0000050 -t tree a neuron
+ogr -r cl -p subClassOf -p BFO:0000050 -t tree -d d neuron
+```
+
+Descendants and ancestors of neuron, parts and subtypes
+
+```
+ogr -r cl -p subClassOf -p BFO:0000050 -t tree -d du neuron
+```
+
+## Visualization using obographviz
+
+Requires: https://www.npmjs.com/package/obographviz
+
+Add og2dot.js to path
+
+```
+ogr -p subClassOf BFO:0000050 -r go -t png   a nucleus
+```
+
+This proceeds by:
+
+ 1. Using the python obographs library to extract a networkx subgraph around the specified node
+ 2. Write as obographs-json
+ 3. Calls og2dot.js
+
+Output:
+
+![img](https://github.com/biolink/biolink-api/raw/master/obographs/docs/nucleus.png)
+
+## Search
+
+List exact matches to neuron
+
+```
+ogr -r cl neuron
+```
+
+Terms starting with neuron, SQL style
+
+```
+ogr -r cl neuron%
+```
+
+Terms starting with neuron, regex (equivalent to above)
+
+```
+ogr -r cl -s r ^neuron
+```
+
+Terms ending with neuron
+
+```
+ogr -r cl -s r neuron$
+```
+
+Terms containing the string neuron
+
+```
+ogr -r cl -s r neuron
+```
+
+Note: any of the above can be fed into other renderers, e.g. trees, graphs
+
+E.g. terms containing neuron, to obo
+
+```
+ogr -r cl %neuron% -t obo
+```
+
+E.g. terms ending neuron, to tree
+
+```
+ogr -r cl %neuron -t tree
 ```
