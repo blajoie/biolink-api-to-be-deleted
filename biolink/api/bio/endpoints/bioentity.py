@@ -22,6 +22,9 @@ core_parser.add_argument('exclude_automatic_assertions', default=False, type=boo
 core_parser.add_argument('fetch_objects', type=bool, default=True, help='If true, returns a distinct set of association.objects (typically ontology terms). This appears at the top level of the results payload')
 core_parser.add_argument('use_compact_associations', type=bool, default=False, help='If true, returns results in compact associations format')
 core_parser.add_argument('slim', action='append', help='Map objects up (slim) to a higher level category. Value can be ontology class ID or subset ID')
+core_parser.add_argument('evidence', help="""Object id, e.g. ECO:0000501 (for IEA; Includes inferred by default)
+                    or a specific publication or other supporting ibject, e.g. ZFIN:ZDB-PUB-060503-2.
+                    """)
 
 scigraph = SciGraph('https://scigraph-data.monarchinitiative.org/scigraph/')
 
@@ -128,7 +131,7 @@ class GenePhenotypeAssociations(Resource):
 
         return search_associations('gene', 'phenotype', None, id, **core_parser.parse_args())
 
-@ns.route('/gene/<id>/disease/')
+@ns.route('/gene/<id>/diseases/')
 @api.doc(params={'id': 'CURIE identifier of gene, e.g. NCBIGene:4750, Orphanet:173505. Equivalent IDs can be used with same results'})
 class GeneDiseaseAssociations(Resource):
 
@@ -442,13 +445,13 @@ class GotermPhenotypeAssociations(Resource):
 class GotermGeneAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association)
+    @api.marshal_list_with(association_results)
     def get(self, id):
         """
-        TODO Returns associated phenotypes
+        TODO Returns associated genes
 
         """
-        return { 'foo' : 'bar' }
+        return search_associations('gene', 'function', None, id, invert_subject_object=True, **core_parser.parse_args())
     
 @ns.route('/pathway/<id>')
 @api.doc(params={'id': 'CURIE any pathway element. May be a GO ID or a pathway database ID'})
@@ -529,6 +532,7 @@ class LiteratureGenotypeAssociations(Resource):
         return search_associations('literature', 'genotype', None, id, **core_parser.parse_args())
 
 @ns.route('/anatomy/<id>')
+@api.doc(params={'id': 'CURIE identifier of anatomical entity, e.g. GO:0005634 (nucleus), UBERON:0002037 (cerebellum), CL:0000540 (neuron). Equivalent IDs can be used with same results'})
 class AnatomyObject(Resource):
 
     @api.expect(core_parser)
@@ -538,8 +542,11 @@ class AnatomyObject(Resource):
         TODO Returns anatomical entity
 
         Anatomical entities span ranges from the subcellular (e.g. nucleus) through cells to tissues, organs and organ systems.
+
+        When returning associations, inference over the appropriate relation will be used. For example, for gene expression, part-of will be used.
         """
-        return { 'foo' : 'bar' }
+        obj = scigraph.bioobject(id)
+        return obj
 
 @ns.route('/anatomy/<id>/genes/')
 class AnatomyGeneAssociations(Resource):
@@ -551,6 +558,8 @@ class AnatomyGeneAssociations(Resource):
         TODO Returns associations between anatomical entity and genes
 
         Typically encompasses genes expressed in a particular location.
+
+        INFERENCE: part-of
         """
         return { 'foo' : 'bar' }
 

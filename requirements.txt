@@ -1,6 +1,6 @@
 pip>=9.0.1
 wheel>0.25.0
-flask-restplus>=0.9.2
+flask-restplus>=0.10.1
 Flask-SQLAlchemy>=2.1
 flask-cors>=0.0
 pysolr>=3.6.0
@@ -13,6 +13,7 @@ jsonpickle>=0.0
 behave>=0.0
 jsonpath_rw>=0.0
 pytest>=0.0
+pytest_logging>=0.0
 percache>=0.0
 pydotplus>=0.0
 cachier>=0.1.26

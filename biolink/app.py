@@ -1,5 +1,7 @@
 import logging.config
+import os
 
+import flask as f
 from flask import Flask, Blueprint
 from flask_cors import CORS, cross_origin
 from biolink import settings
@@ -8,11 +10,12 @@ from biolink.api.link.endpoints.associations_from import ns as associations_from
 from biolink.api.link.endpoints.find_associations import ns as find_associations_namespace
 from biolink.api.search.endpoints.entitysearch import ns as entity_search_namespace
 from biolink.api.entityset.endpoints.summary import ns as entityset_summary_namespace
+from biolink.api.entityset.endpoints.slimmer import ns as entityset_slimmer_namespace
 from biolink.api.entityset.endpoints.geneset_homologs import ns as geneset_homologs_namespace
 from biolink.api.nlp.endpoints.annotate import ns as nlp_annotate_namespace
-from biolink.api.ontol.endpoints.slimmer import ns as ontol_slimmer_namespace
 from biolink.api.ontol.endpoints.subgraph import ns as ontol_subgraph_namespace
 from biolink.api.ontol.endpoints.termstats import ns as ontol_termstats_namespace
+from biolink.api.ontol.endpoints.labeler import ns as ontol_labeler
 #from biolink.api.ontol.endpoints.enrichment import ns as ontol_enrichment_namespace
 from biolink.api.graph.endpoints.node import ns as graph_node_namespace
 
@@ -63,6 +66,16 @@ api.init_app(blueprint)
 #api.add_namespace(link_search_namespace)
 app.register_blueprint(blueprint)
 db.init_app(app)
+
+with app.app_context():
+    f.g.foo = 99
+    print("FG={}".format(f.g.foo))
+
+# initial setup
+from obographs.ontol_factory import OntologyFactory
+factory = OntologyFactory()
+ont = factory.create()
+    
 
 @app.route("/")
 def hello():

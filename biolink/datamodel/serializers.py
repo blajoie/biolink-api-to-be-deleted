@@ -54,10 +54,13 @@ named_object = api.model('NamedObject', {
     'description': fields.String(readOnly=True, description='Descriptive text for the entity. For ontology classes, this will be a definition.'),
     'categories': fields.List(fields.String(readOnly=True, description='Type of object (inferred)')),
     'types': fields.List(fields.String(readOnly=True, description='Type of object (direct)')),
-    'synonyms': fields.List(fields.Nested(synonym_property_value), description='list of synonyms or alternate labels')
+    'synonyms': fields.List(fields.Nested(synonym_property_value), description='list of synonyms or alternate labels'),
+    'deprecated': fields.Boolean(description='True if the node is deprecated/obsoleted.'),
+    'replaced_by': fields.List(fields.String(readOnly=True, description='Direct 1:1 replacement (if named object is obsoleted)')),
+    'consider': fields.List(fields.String(readOnly=True, description='Potential replacement object (if named object is obsoleted)')),
 })
 
-entity_reference = api.model('NamedObject', {
+entity_reference = api.model('EntityReference', {
     'id': fields.String(readOnly=True, description='ID or CURIE e.g. MGI:1201606'),
     'label': fields.String(readOnly=True, description='RDFS Label'),
     'categories': fields.List(fields.String(readOnly=True, description='Type of object')),
@@ -96,7 +99,7 @@ association = api.model('Association', {
     'subject': fields.Nested(bio_object, description='Subject of association (what it is about), e.g. ClinVar:nnn, MGI:1201606'),
     'subject_extension': fields.List(fields.Nested(annotation_extension, description='Additional properties of the subject in the context of this association.')),
     'object': fields.Nested(bio_object, description='Object (sensu RDF), aka target, e.g. HP:0000448, MP:0002109, DOID:14330'),
-    'object_extension': fields.List(fields.Nested(annotation_extension, description='Additional properties of the object in the context of this association')),
+    'object_extension': fields.List(fields.Nested(annotation_extension, description='Additional properties of the object in the context of this association. See http://www.biomedcentral.com/1471-2105/15/155')),
     'relation': fields.Nested(relation, description='Relationship type connecting subject and object'),
     'slim': fields.List(fields.String, description='Objects mapped to a slim'),
     'qualifiers': fields.List(fields.Nested(association_property_value, description='Qualifier on the association')),
@@ -110,6 +113,12 @@ association = api.model('Association', {
 chained_association = api.model('ChainedAssociation', {
     'proximal_association': fields.Nested(association, description='immediate association, between subject and intermediate object'),
     'distal_associations': fields.List(fields.Nested(association), description='Associations where the intermediate object is the subject')
+})
+
+slimmed_association = api.model('SlimmedAssociation', {
+    'associations': fields.List(fields.Nested(association, description='immediate association, between subject and intermediate object')),
+    'subject': fields.String(description='subject of association (e.g. gene)'),
+    'slim': fields.String(description='Slimmed term')
 })
 
 compact_association_set = api.model('CompactAssociationSet', {
