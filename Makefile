@@ -1,8 +1,8 @@
-SERVER= http://api.monarchinitiative.org/api
+SERVER= https://api.monarchinitiative.org/api
 SERVER_DEV= http://localhost:5000/api
 SWAGGER= $(SERVER)/swagger.json
 
-test: behave-tests subpackage_tests
+test: behave-tests 
 
 behave-tests:
 	cd tests && behave
@@ -14,7 +14,7 @@ clients: $(CLIENT_TARGETS)
 
 # generate client code for javascript, python etc
 # after making this, copy to separate repo
-biolink-%-client:
+biolink-%-client: swagger.json
 	swagger-codegen generate -i $(SWAGGER) -l $* -o $@
 
 deploy-%-client: biolink-%-client
@@ -25,7 +25,7 @@ deploy-clients: $(patsubst %, deploy-%-client, $(CLIENT_LANGS))
 datamodel: biomodel/core.py
 
 swagger.json:
-	wget $(SWAGGER) -O $@
+	wget --no-check-certificate $(SWAGGER) -O $@
 
 biomodel/core.py: ./biolink/datamodel/serializers.py
 	./util/gen-class-model.pl $< > $@.tmp && mv $@.tmp $@
@@ -36,9 +36,3 @@ biomodel/obograph.py: ./biolink/datamodel/obograph_serializers.py
 EXAMPLE-QUERIES.md:
 	./util/behave-to-markdown.pl tests/*.feature > $@
 
-#PACKAGES = prefixcommons scigraph biogolr
-PACKAGES = prefixcommons biogolr
-subpackage_tests: $(patsubst %,test-%,$(PACKAGES))
-
-test-%:
-	pytest $*/tests/*.py
