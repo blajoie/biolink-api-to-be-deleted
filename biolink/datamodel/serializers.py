@@ -143,8 +143,11 @@ sequence_position = api.model('SequencePosition', {
 })
 
 sequence_location = api.inherit('SequenceLocation', bio_object, {
-    'begin': fields.Nested(sequence_position),
+    'start': fields.Nested(sequence_position),
     'end': fields.Nested(sequence_position),
+    'phase': fields.Integer(descript="Indicates where the feature begins with reference to the reading frame (0,1,2)."),
+    'score': fields.Integer(descript="The score of the feature, a floating point number."),
+    'strand': fields.Integer (description="Strand direction: 1=='+', -1=='-', 0 or null infers unknown."),
 })
 
 seq = api.inherit('Seq', bio_object, {
@@ -173,6 +176,11 @@ exon = api.inherit('Exon', bio_object, {
     'genes': fields.List(fields.Nested(entity_reference), description='References to any gene objects that have this exon in any of their transcripts')
 })
 
+cds = api.inherit('CDS', bio_object, {
+    'sequence_features' : fields.List(fields.Nested(sequence_feature), description='Sequence feature representing this particular instance on a genome'),
+    'genes': fields.List(fields.Nested(entity_reference), description='References to any gene objects that have this exon in any of their transcripts')
+})
+
 regulatory_element = api.inherit('RegulatoryElement', bio_object, {
     'sequence_features' : fields.List(fields.Nested(sequence_feature), description='Sequence feature representing this particular instance on a genome'),
     'targets': fields.List(fields.Nested(entity_reference), description='References to any gene objects whose expression is regulated by this element')
@@ -181,6 +189,7 @@ regulatory_element = api.inherit('RegulatoryElement', bio_object, {
 transcript = api.inherit('Transcript', bio_object, {
     'sequence_features' : fields.List(fields.Nested(sequence_feature), description='Sequence feature representing this particular instance on a genome'),
     'exons' : fields.List(fields.Nested(exon), description='All exons used in this transcript'),
+    'cds' : fields.List(fields.Nested(cds), description='All cds used in this transcript'),
     'genes': fields.List(fields.Nested(entity_reference), description='References to any gene objects that have this transcript. This may not be populated if this is contained in a gene object'),
 })
 
@@ -245,9 +254,4 @@ clinical_individual = api.inherit('ClinicalIndividual', named_object, {
 })
 
 
-# SEARCH
-
-search_result = api.inherit('SearchResult', named_object, {
-    'score': fields.Float(description='accuracy of match')
-})
 

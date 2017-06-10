@@ -65,7 +65,7 @@ class GenericObject(Resource):
 class GenericAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns associations for an entity regardless of the type
@@ -88,7 +88,7 @@ class GeneObject(Resource):
 class AbstractGeneAssociationResource(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         pass
     
@@ -96,7 +96,7 @@ class AbstractGeneAssociationResource(Resource):
 class GeneInteractions(AbstractGeneAssociationResource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns interactions for a gene
@@ -113,7 +113,7 @@ homolog_parser.add_argument('homology_type', choices=['P', 'O', 'LDO'], help='P,
 class GeneHomologAssociations(AbstractGeneAssociationResource):
 
     @api.expect(homolog_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns homologs for a gene
@@ -130,6 +130,7 @@ class GeneHomologAssociations(AbstractGeneAssociationResource):
 class GenePhenotypeAssociations(Resource):
 
     @api.expect(core_parser)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns phenotypes associated with gene
@@ -146,6 +147,7 @@ class GenePhenotypeAssociations(Resource):
 class GeneDiseaseAssociations(Resource):
 
     @api.expect(core_parser)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns diseases associated with gene
@@ -162,7 +164,7 @@ class GeneDiseaseAssociations(Resource):
 class GeneExpressionAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         TODO Returns expression events for a gene
@@ -176,29 +178,53 @@ class GeneExpressionAssociations(Resource):
 class GeneFunctionAssociations(AbstractGeneAssociationResource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns function associations for a gene.
 
-        Note: currently this is implemented as a query to the GO solr instance.
-        A smaller set of identifiers may be supported:
+        IMPLEMENTATION DETAILS
+        ----------------------
+
+        Note: currently this is implemented as a query to the GO/AmiGO solr instance.
+        This directly supports IDs such as:
 
          - ZFIN e.g. ZFIN:ZDB-GENE-050417-357
-         - MGI e.g. MGI:1342287
-         - Use UniProt for human (TODO: map this)
+
+        Note that the AmiGO GOlr natively stores MGI annotations to MGI:MGI:nn. However,
+        the standard for biolink is MGI:nnnn, so you should use this (will be transparently
+        mapped to legacy ID)
+
+        Additionally, for some species such as Human, GO has the annotation attached to the UniProt ID.
+        Again, this should be transparently handled; e.g. you can use NCBIGene:6469, and this will be
+        mapped behind the scenes for querying.
         """
 
-        return search_associations(
-            subject_category='gene', object_category='function',
+        assocs = search_associations(
+            object_category='function',
             subject=id, **core_parser.parse_args())
+
+        # If there are no associations for the given ID, try other IDs.
+        # Note the AmiGO instance does *not* support equivalent IDs
+        if len(assocs['associations']) == 0:
+            # Note that GO currently uses UniProt as primary ID for some sources: https://github.com/biolink/biolink-api/issues/66
+            # https://github.com/monarch-initiative/dipper/issues/461   
+            logging.debug("Found no associations using {} - will try mapping to other IDs".format(id))
+            sg_dev = SciGraph(url='https://scigraph-data-dev.monarchinitiative.org/scigraph/')
+            prots = sg_dev.gene_to_uniprot_proteins(id)
+            for prot in prots:
+                pr_assocs = search_associations(
+                        object_category='function',
+                        subject=prot, **core_parser.parse_args())
+                assocs['associations'] += pr_assocs['associations']
+        return assocs
     
 @ns.route('/gene/<id>/pubs/')
 @api.doc(params={'id': 'CURIE identifier of gene, e.g. NCBIGene:4750. Equivalent IDs can be used with same results'})
 class GenePublicationList(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         TODO Returns expression events for a gene
@@ -237,7 +263,7 @@ class DiseaseObject(Resource):
 class DiseasePhenotypeAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns phenotypes associated with disease
@@ -252,7 +278,7 @@ class DiseasePhenotypeAssociations(Resource):
 class DiseaseGeneAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns genes associated with a disease
@@ -312,7 +338,7 @@ class DiseaseSubstanceAssociations(Resource):
 class DiseaseModelAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """Returns associations to models of the disease
 
@@ -341,7 +367,7 @@ class DiseaseModelAssociations(Resource):
 class DiseaseModelTaxonAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id, taxon):
         """
         Same as `/disease/<id>/models` but constrain models by taxon
@@ -472,7 +498,7 @@ class GotermPhenotypeAssociations(Resource):
 class GotermGeneAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         TODO Returns associated genes
@@ -769,7 +795,7 @@ class GenotypeObject(Resource):
 class GenotypeGenotypeAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns genotypes-genotype associations.
@@ -787,7 +813,7 @@ class GenotypeGenotypeAssociations(Resource):
 class GenotypePhenotypeAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns phenotypes associated with a genotype
@@ -803,7 +829,7 @@ class GenotypePhenotypeAssociations(Resource):
 class GenotypeDiseaseAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns diseases associated with a genotype
@@ -819,7 +845,7 @@ class GenotypeDiseaseAssociations(Resource):
 class GenotypeGeneAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns genes associated with a genotype
@@ -866,7 +892,7 @@ class VariantObject(Resource):
 class VariantGenotypeAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns genotypes associated with a variant
@@ -882,7 +908,7 @@ class VariantGenotypeAssociations(Resource):
 class VariantPhenotypeAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns phenotypes associated with a variant
@@ -898,7 +924,7 @@ class VariantPhenotypeAssociations(Resource):
 class VariantGeneAssociations(Resource):
 
     @api.expect(core_parser)
-    @api.marshal_list_with(association_results)
+    @api.marshal_with(association_results)
     def get(self, id):
         """
         Returns genes associated with a variant
